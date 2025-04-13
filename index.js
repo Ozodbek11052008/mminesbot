@@ -1,14 +1,22 @@
 const { Telegraf, Markup } = require('telegraf');
+const express = require('express'); // Add Express
 require('dotenv').config();
 
+const app = express(); // Create Express app
 const config = {
     BOT_TOKEN: process.env.BOT_TOKEN,
-    CHANNEL_USERNAME: process.env.CHANNEL_USERNAME, // Format: "@channelname"
-    CHANNEL_ID: process.env.CHANNEL_ID, // Format: "-1001234567890"
-    WEBAPP_URL: process.env.WEBAPP_URL || 'https://celebrated-monstera-5f9fb5.netlify.app/'
+    CHANNEL_USERNAME: process.env.CHANNEL_USERNAME,
+    CHANNEL_ID: process.env.CHANNEL_ID,
+    WEBAPP_URL: process.env.WEBAPP_URL || 'https://celebrated-monstera-5f9fb5.netlify.app/',
+    PORT: process.env.PORT || 3000 // Add port configuration
 };
 
 const bot = new Telegraf(config.BOT_TOKEN);
+
+// Health check endpoint
+app.get('/', (req, res) => {
+    res.send('Bot is running!');
+});
 
 // Check subscription status
 async function isUserSubscribed(userId) {
@@ -27,16 +35,14 @@ bot.start(async (ctx) => {
         const isSubscribed = await isUserSubscribed(ctx.from.id);
         
         if (isSubscribed) {
-            // User is already subscribed - show web app immediately
             await ctx.replyWithHTML(
                 `🎉 <b>Xush kelibsiz, ${ctx.from.first_name}!</b>\n\n` +
-                `Botimizdan foydalanish uchun login va parolni   @Izzat_T oling`,
+                `Botimizdan foydalanish uchun login va parolni @RevizorCDR oling`,
                 Markup.inlineKeyboard([
                     [Markup.button.webApp('🌐 Veb ilovani ochish', config.WEBAPP_URL)]
                 ])
             );
         } else {
-            // User needs to subscribe first
             await ctx.replyWithHTML(
                 `👋 <b>Xush kelibsiz, ${ctx.from.first_name}!</b>\n\n` +
                 `Bizning xizmatlardan foydalanish uchun quyidagi kanalga obuna bo'ling:\n` +
@@ -62,7 +68,7 @@ bot.action('verify_subscription', async (ctx) => {
         if (isSubscribed) {
             await ctx.editMessageText(
                 `🎉 <b>Tekshirish muvaffaqiyatli!</b>\n\n` +
-                `Bot ishlashi uchun login va  parol  ni @Izzat_T dan oling`,
+                `Bot ishlashi uchun login va parol ni @RevizorCDR dan oling`,
                 {
                     parse_mode: 'HTML',
                     ...Markup.inlineKeyboard([
@@ -95,10 +101,13 @@ bot.catch((err, ctx) => {
     ctx.reply('⚠️ Xatolik yuz berdi. Iltimos, keyinroq qayta urinib ko\'ring.');
 });
 
-// Start bot
-bot.launch()
-    .then(() => console.log(`🤖 Bot @${bot.context.botInfo.username} sifatida ishga tushdi`))
-    .catch(err => console.error('Ishga tushirishda xatolik:', err));
+// Start the server and bot
+app.listen(config.PORT, () => {
+    console.log(`Server running on port ${config.PORT}`);
+    bot.launch()
+        .then(() => console.log(`🤖 Bot @${bot.context.botInfo.username} sifatida ishga tushdi`))
+        .catch(err => console.error('Ishga tushirishda xatolik:', err));
+});
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
