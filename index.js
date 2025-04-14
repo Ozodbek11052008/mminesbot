@@ -1,5 +1,6 @@
 const { Telegraf, Markup, session } = require('telegraf');
 const express = require('express');
+const axios = require('axios');
 require('dotenv').config();
 
 const app = express();
@@ -8,23 +9,50 @@ const config = {
     CHANNEL_USERNAME: process.env.CHANNEL_USERNAME,
     CHANNEL_ID: process.env.CHANNEL_ID,
     WEBAPP_URL: process.env.WEBAPP_URL || 'https://celebrated-monstera-5f9fb5.netlify.app/',
-    ADMIN_USERNAME: 'Izzat_T', // Without @
-    PORT: process.env.PORT || 3000
+    ADMIN_USERNAME: 'Izzat_T',
+    PORT: process.env.PORT || 3000,
+    RENDER_EXTERNAL_URL: process.env.RENDER_EXTERNAL_URL,
+    PING_INTERVAL: 14 * 60 * 1000 // 14 minutes
 };
 
 const bot = new Telegraf(config.BOT_TOKEN);
-const activeUsers = new Set(); // Tracks active users
+const activeUsers = new Set();
 
-// Initialize session middleware
+// Session configuration
 bot.use(session({
-    defaultSession: () => ({})
+    defaultSession: () => ({
+        waitingForPost: false
+    })
 }));
 
-// Middleware to track active users
+// Track active users
 bot.use((ctx, next) => {
-    if (ctx.from) activeUsers.add(ctx.from.id);
+    if (ctx.from) {
+        activeUsers.add(ctx.from.id);
+    }
     return next();
 });
+
+// Webhook setup for production
+if (process.env.NODE_ENV === 'production') {
+    app.use(express.json());
+    app.use(bot.webhookCallback('/webhook'));
+    bot.telegram.setWebhook(`${config.RENDER_EXTERNAL_URL}/webhook`);
+}
+
+// Ping service to prevent idle shutdown
+function startPingService() {
+    if (!config.RENDER_EXTERNAL_URL) return;
+    
+    setInterval(async () => {
+        try {
+            await axios.get(config.RENDER_EXTERNAL_URL);
+            console.log('🔄 Pinged server to prevent idle shutdown');
+        } catch (error) {
+            console.error('Ping failed:', error.message);
+        }
+    }, config.PING_INTERVAL);
+}
 
 // Check admin status
 function isAdmin(ctx) {
@@ -37,7 +65,7 @@ async function isUserSubscribed(userId) {
         const member = await bot.telegram.getChatMember(config.CHANNEL_ID, userId);
         return ['member', 'administrator', 'creator'].includes(member.status);
     } catch (error) {
-        console.error('Obuna tekshirishda xatolik:', error);
+        console.error('Subscription check error:', error);
         return false;
     }
 }
@@ -46,146 +74,160 @@ async function isUserSubscribed(userId) {
 bot.start(async (ctx) => {
     try {
         if (isAdmin(ctx)) {
-            await ctx.reply(
-                '👨‍💻 Admin Panel',
-                Markup.keyboard([
-                    ['👥 Show Users', '📨 Send Post'],
-                    ['🔄 Refresh Stats']
-                ]).resize().oneTime()
-            );
+            await showAdminPanel(ctx);
         } else {
             const isSubscribed = await isUserSubscribed(ctx.from.id);
             if (isSubscribed) {
-                await ctx.replyWithHTML(
-                    `🎉 <b>Xush kelibsiz, ${ctx.from.first_name}!</b>\n\n` +
-                    `Botimizdan foydalanish uchun login va parolni @RevizorCDR oling`,
-                    Markup.inlineKeyboard([
-                        [Markup.button.webApp('🌐 Veb ilovani ochish', config.WEBAPP_URL)]
-                    ])
-                );
+                await showWebAppButton(ctx);
             } else {
-                await ctx.replyWithHTML(
-                    `👋 <b>Xush kelibsiz, ${ctx.from.first_name}!</b>\n\n` +
-                    `Bizning xizmatlardan foydalanish uchun quyidagi kanalga obuna bo'ling:\n` +
-                    `<b>${config.CHANNEL_USERNAME}</b>`,
-                    Markup.inlineKeyboard([
-                        [Markup.button.url('📢 Kanalga qo\'shilish', `https://t.me/${config.CHANNEL_USERNAME.substring(1)}`)],
-                        [Markup.button.callback('✅ Obuna bo\'ldim', 'verify_subscription')]
-                    ])
-                );
+                await showSubscriptionRequest(ctx);
             }
         }
     } catch (error) {
-        console.error('Start xatosi:', error);
-        await ctx.reply('⚠️ Xatolik yuz berdi. Iltimos, qayta urinib ko\'ring.');
+        handleError(ctx, 'Start command', error);
     }
 });
 
 // Subscription verification handler
 bot.action('verify_subscription', async (ctx) => {
     try {
-        await ctx.answerCbQuery('🔍 Obuna tekshirilmoqda...');
+        await ctx.answerCbQuery('🔍 Checking subscription...');
         const isSubscribed = await isUserSubscribed(ctx.from.id);
 
         if (isSubscribed) {
-            await ctx.editMessageText(
-                `🎉 <b>Tekshirish muvaffaqiyatli!</b>\n\n` +
-                `Bot ishlashi uchun login va parol ni @RevizorCDR dan oling`,
-                {
-                    parse_mode: 'HTML',
-                    ...Markup.inlineKeyboard([
-                        [Markup.button.webApp('🌐 Veb ilovani ochish', config.WEBAPP_URL)]
-                    ])
-                }
-            );
+            await showWebAppButton(ctx, true);
         } else {
-            await ctx.editMessageText(
-                `❌ <b>Obuna topilmadi</b>\n\n` +
-                `Iltimos, avval bizning kanalga qo'shiling: ${config.CHANNEL_USERNAME}`,
-                {
-                    parse_mode: 'HTML',
-                    ...Markup.inlineKeyboard([
-                        [Markup.button.url('📢 Kanalga qo\'shilish', `https://t.me/${config.CHANNEL_USERNAME.substring(1)}`)],
-                        [Markup.button.callback('🔄 Qayta tekshirish', 'verify_subscription')]
-                    ])
-                }
-            );
+            await showSubscriptionRequest(ctx, true);
         }
     } catch (error) {
-        console.error('Tekshirish xatosi:', error);
-        await ctx.answerCbQuery('⚠️ Tekshirishda xatolik yuz berdi. Keyinroq qayta urinib ko\'ring.');
+        handleError(ctx, 'Subscription verification', error);
     }
 });
 
-// Admin: Show users
+// Admin panel commands
 bot.hears('👥 Show Users', async (ctx) => {
     if (!isAdmin(ctx)) return;
-    await ctx.reply(`Active users: ${activeUsers.size}\nUser IDs:\n${Array.from(activeUsers).join('\n')}`);
+    try {
+        await ctx.reply(`📊 Active users: ${activeUsers.size}\n\nUser IDs:\n${Array.from(activeUsers).join('\n')}`);
+    } catch (error) {
+        handleError(ctx, 'Show users', error);
+    }
 });
 
-// Admin: Send post
 bot.hears('📨 Send Post', async (ctx) => {
     if (!isAdmin(ctx)) return;
-    ctx.session.waitingForPost = true;
-    await ctx.reply('Send me the post content (text/photo/video):');
+    try {
+        ctx.session.waitingForPost = true;
+        await ctx.reply('Please send the content to broadcast (text/photo/video):');
+    } catch (error) {
+        handleError(ctx, 'Send post', error);
+    }
 });
 
-// Admin: Handle broadcasts
+// Handle admin broadcasts
 bot.on(['text', 'photo', 'video'], async (ctx) => {
     if (!isAdmin(ctx) || !ctx.session.waitingForPost) return;
-
-    delete ctx.session.waitingForPost;
-    let successCount = 0;
-
-    for (const userId of activeUsers) {
-        try {
-            if (ctx.message.photo) {
-                await ctx.telegram.sendPhoto(
-                    userId,
-                    ctx.message.photo[0].file_id,
-                    { caption: ctx.message.caption || '' }
-                );
-            } else if (ctx.message.video) {
-                await ctx.telegram.sendVideo(
-                    userId,
-                    ctx.message.video.file_id,
-                    { caption: ctx.message.caption || '' }
-                );
-            } else {
-                await ctx.telegram.sendMessage(userId, ctx.message.text);
+    
+    try {
+        ctx.session.waitingForPost = false;
+        const totalUsers = activeUsers.size;
+        let successCount = 0;
+        
+        for (const userId of activeUsers) {
+            try {
+                if (ctx.message.photo) {
+                    await ctx.telegram.sendPhoto(
+                        userId,
+                        ctx.message.photo[0].file_id,
+                        { caption: ctx.message.caption || '' }
+                    );
+                } else if (ctx.message.video) {
+                    await ctx.telegram.sendVideo(
+                        userId,
+                        ctx.message.video.file_id,
+                        { caption: ctx.message.caption || '' }
+                    );
+                } else {
+                    await ctx.telegram.sendMessage(userId, ctx.message.text);
+                }
+                successCount++;
+            } catch (error) {
+                console.error(`Failed to send to ${userId}:`, error);
+                activeUsers.delete(userId);
             }
-            successCount++;
-        } catch (err) {
-            console.error(`Failed to send to ${userId}:`, err);
-            activeUsers.delete(userId);
         }
+        
+        await ctx.reply(`✅ Successfully sent to ${successCount}/${totalUsers} users`);
+    } catch (error) {
+        handleError(ctx, 'Broadcast', error);
     }
-
-    await ctx.reply(`✅ Sent to ${successCount}/${activeUsers.size} users`);
 });
 
-// Admin: Refresh stats (placeholder, as original code had it but no logic)
-bot.hears('🔄 Refresh Stats', async (ctx) => {
-    if (!isAdmin(ctx)) return;
-    await ctx.reply(`📊 Current active users: ${activeUsers.size}`);
-});
+// Helper functions
+async function showAdminPanel(ctx) {
+    await ctx.reply(
+        '👨‍💻 Admin Panel',
+        Markup.keyboard([
+            ['👥 Show Users', '📨 Send Post'],
+            ['🔄 Refresh Stats']
+        ]).resize().oneTime()
+    );
+}
 
-// Error handling
-bot.catch((err, ctx) => {
-    console.error('Bot xatosi:', err);
-    ctx.reply('⚠️ Xatolik yuz berdi. Iltimos, keyinroq qayta urinib ko\'ring.');
-});
+async function showWebAppButton(ctx, isEdit = false) {
+    const message = `🎉 <b>Welcome, ${ctx.from.first_name}!</b>\n\n` +
+                   `To use the bot, get login credentials from @RevizorCDR`;
+    
+    const keyboard = Markup.inlineKeyboard([
+        [Markup.button.webApp('🌐 Open Web App', config.WEBAPP_URL)]
+    ]);
+    
+    if (isEdit) {
+        await ctx.editMessageText(message, { parse_mode: 'HTML', ...keyboard });
+    } else {
+        await ctx.replyWithHTML(message, keyboard);
+    }
+}
+
+async function showSubscriptionRequest(ctx, isEdit = false) {
+    const message = `👋 <b>Welcome, ${ctx.from.first_name}!</b>\n\n` +
+                   `To access our services, please subscribe to:\n` +
+                   `<b>${config.CHANNEL_USERNAME}</b>`;
+    
+    const keyboard = Markup.inlineKeyboard([
+        [Markup.button.url('📢 Join Channel', `https://t.me/${config.CHANNEL_USERNAME.substring(1)}`)],
+        [Markup.button.callback('✅ I Subscribed', 'verify_subscription')]
+    ]);
+    
+    if (isEdit) {
+        await ctx.editMessageText(message, { parse_mode: 'HTML', ...keyboard });
+    } else {
+        await ctx.replyWithHTML(message, keyboard);
+    }
+}
+
+function handleError(ctx, context, error) {
+    console.error(`Error in ${context}:`, error);
+    ctx.reply('⚠️ An error occurred. Please try again later.');
+}
 
 // Health check endpoint
-app.get('/', (req, res) => res.send('Bot is running!'));
-
-// Start the server and bot
-app.listen(config.PORT, () => {
-    console.log(`Server running on port ${config.PORT}`);
-    bot.launch()
-        .then(() => console.log(`🤖 Bot @${bot.botInfo?.username || 'unknown'} sifatida ishga tushdi`))
-        .catch(err => console.error('Ishga tushirishda xatolik:', err));
+app.get('/', (req, res) => {
+    res.send('Bot is running');
 });
 
+// Start server
+app.listen(config.PORT, () => {
+    console.log(`🚀 Server running on port ${config.PORT}`);
+    startPingService();
+    
+    if (process.env.NODE_ENV !== 'production') {
+        bot.launch()
+            .then(() => console.log(`🤖 Bot @${bot.botInfo.username} is running`))
+            .catch(err => console.error('Bot launch failed:', err));
+    }
+});
+
+// Graceful shutdown
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
