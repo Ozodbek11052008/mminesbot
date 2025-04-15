@@ -9,7 +9,7 @@ const config = {
     CHANNEL_USERNAME: process.env.CHANNEL_USERNAME,
     CHANNEL_ID: process.env.CHANNEL_ID,
     WEBAPP_URL: process.env.WEBAPP_URL || 'https://celebrated-monstera-5f9fb5.netlify.app/',
-    ADMIN_USERNAME: 'Ozi_coder',
+    ADMIN_USERNAME: 'Izzat_T',
     PORT: process.env.PORT || 3000,
     RENDER_EXTERNAL_URL: process.env.RENDER_EXTERNAL_URL,
     PING_INTERVAL: 14 * 60 * 1000 // 14 minutes
