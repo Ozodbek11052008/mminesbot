@@ -9,7 +9,7 @@ const config = {
     CHANNEL_USERNAME: process.env.CHANNEL_USERNAME,
     CHANNEL_ID: process.env.CHANNEL_ID,
     WEBAPP_URL: process.env.WEBAPP_URL || 'https://celebrated-monstera-5f9fb5.netlify.app/',
-    ADMIN_USERNAME: 'Izzat_T',
+    ADMIN_USERNAME: 'Ozi_coder',
     PORT: process.env.PORT || 3000,
     RENDER_EXTERNAL_URL: process.env.RENDER_EXTERNAL_URL,
     PING_INTERVAL: 14 * 60 * 1000 // 14 minutes
@@ -105,16 +105,16 @@ bot.action('verify_subscription', async (ctx) => {
 });
 
 // Admin panel commands
-bot.hears('👥 Show Users', async (ctx) => {
+bot.hears('👥 Obunachilarni korsatish', async (ctx) => {
     if (!isAdmin(ctx)) return;
     try {
-        await ctx.reply(`📊 Active users: ${activeUsers.size}\n\nUser IDs:\n${Array.from(activeUsers).join('\n')}`);
+        await ctx.reply(`📊 Aktiv Obunachilar: ${activeUsers.size}\n\nUser IDs:\n${Array.from(activeUsers).join('\n')}`);
     } catch (error) {
         handleError(ctx, 'Show users', error);
     }
 });
 
-bot.hears('📨 Send Post', async (ctx) => {
+bot.hears('📨 Xabar Yuborish', async (ctx) => {
     if (!isAdmin(ctx)) return;
     try {
         ctx.session.waitingForPost = true;
@@ -168,18 +168,18 @@ async function showAdminPanel(ctx) {
     await ctx.reply(
         '👨‍💻 Admin Panel',
         Markup.keyboard([
-            ['👥 Show Users', '📨 Send Post'],
+            ['👥 Obunachilarni korsatish', '📨 Xabar Yuborish'],
             ['🔄 Refresh Stats']
         ]).resize().oneTime()
     );
 }
 
 async function showWebAppButton(ctx, isEdit = false) {
-    const message = `🎉 <b>Welcome, ${ctx.from.first_name}!</b>\n\n` +
-                   `To use the bot, get login credentials from @RevizorCDR`;
+    const message = `🎉 <b>Xush kelibsiz, ${ctx.from.first_name}!</b>\n\n` +
+                   `Botdan foydalanish uchun @RevizorCDR dan login ma'lumotlarini oling`;
     
     const keyboard = Markup.inlineKeyboard([
-        [Markup.button.webApp('🌐 Open Web App', config.WEBAPP_URL)]
+        [Markup.button.webApp('🌐 Veb Ilovani Ochish', config.WEBAPP_URL)]
     ]);
     
     if (isEdit) {
@@ -190,13 +190,13 @@ async function showWebAppButton(ctx, isEdit = false) {
 }
 
 async function showSubscriptionRequest(ctx, isEdit = false) {
-    const message = `👋 <b>Welcome, ${ctx.from.first_name}!</b>\n\n` +
-                   `To access our services, please subscribe to:\n` +
+    const message = `👋 <b>Xush kelibsiz, ${ctx.from.first_name}!</b>\n\n` +
+                   `Bizning xizmatlardan foydalanish uchun quyidagi kanalga obuna bo'ling:\n` +
                    `<b>${config.CHANNEL_USERNAME}</b>`;
     
     const keyboard = Markup.inlineKeyboard([
-        [Markup.button.url('📢 Join Channel', `https://t.me/${config.CHANNEL_USERNAME.substring(1)}`)],
-        [Markup.button.callback('✅ I Subscribed', 'verify_subscription')]
+        [Markup.button.url('📢 Kanalga Qo‘shilish', `https://t.me/${config.CHANNEL_USERNAME.substring(1)}`)],
+        [Markup.button.callback('✅ Obuna bo‘ldim', 'verify_subscription')]
     ]);
     
     if (isEdit) {
